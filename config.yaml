@@ -1,0 +1,166 @@
+# Tipsy Crawler configuration
+# Copy to config.yaml, fill in API keys, then run:
+#   python -m tipsy_crawler.main -c config.yaml --wash-images --wash-text --infer-json
+
+providers:
+  deepseek:
+    base_url: "https://api.deepseek.com"
+    api_key: "${DEEPSEEK_API_KEY}"
+    default_model: "deepseek-chat"
+    timeout: 60
+
+  openai:
+    base_url: "https://api.openai.com/v1"
+    api_key: "${OPENAI_API_KEY}"
+    default_model: "gpt-4o"
+    timeout: 60
+
+  anthropic:
+    base_url: "https://api.anthropic.com/v1"
+    api_key: "${ANTHROPIC_API_KEY}"
+    default_model: "claude-3-5-sonnet-20241022"
+    timeout: 90
+
+tasks:
+  name_generation:
+    provider: deepseek
+    model: deepseek-chat
+
+  text_wash:
+    provider: deepseek
+    model: deepseek-chat
+
+  infer_json:
+    provider: deepseek
+    model: deepseek-chat
+
+mule_router:
+  base_url: "https://api.mulerouter.ai"
+  api_key: "${MULEROUTER_API_KEY}"
+  image_model: "qwen-image-edit-spicy"
+  poll_interval: 3
+  max_poll_time: 300
+
+crawler:
+  output_dir: "/Users/akb/Documents/AKB_file/内容/character_asset/Tipsy角色卡洗卡测试"
+  author_concurrency: 3
+  character_concurrency: 5
+  request_delay_ms: 1500
+  max_retries: 3
+  headless: true
+  use_stealth: true
+  proxy_pool: []
+
+skill_hooks:
+  infer_json: []
+  text_wash: []
+  image_wash: []
+
+# ──────────────────────────────────────────────────────────
+# Prompts — edit these to customize LLM behavior
+# Use {original_name}, {new_name}, {backstory}, {opening},
+# {tags}, {image_filename}, {chat_text} as placeholders.
+# ──────────────────────────────────────────────────────────
+prompts:
+
+  # 1) generate_name — system prompt
+  name_generation_system: |
+    You generate concise, immersive character names.
+    Respond with only the new full name, no explanation.
+
+  # 1) generate_name — user prompt template
+  name_generation_user: |
+    Original name: {original_name}
+    Backstory excerpt: {backstory}
+
+    Create a new full name (first + last) that preserves gender,
+    species or ethnicity flavor, and fantasy/sci-fi tone if present.
+
+  # 2) generate_image_prompt — system prompt (tells LLM how to write image edit prompts)
+  image_prompt_system: |
+    You write concise image editing prompts for an AI image editor.
+    The goal is to slightly alter a character's avatar so it looks
+    different from the original while still fitting the character's
+    personality and aesthetic.
+    Rules:
+    - NEVER use pink or pastel pink hair.
+    - Pick hair/outfit colors that match the character's vibe
+      (e.g. dark tones for villains, warm tones for heroes, etc.).
+    - Keep changes subtle: shift color palette, adjust outfit style,
+      add/remove small accessories.
+    - Keep pose, face structure, expression, and background unchanged.
+    - Output a single English sentence, no explanation.
+
+  # 2) generate_image_prompt — user prompt template
+  image_prompt_user: |
+    Character name: {name}
+    Backstory excerpt: {backstory}
+
+    Write one image editing prompt for this character.
+
+  # 3) wash_text — system prompt
+  wash_text_system: |
+    You are a creative editor. Replace every occurrence of the old
+    character name with the new name, adjust relationship pronouns
+    only when necessary, and lightly rewrite to avoid verbatim copy.
+    Preserve NSFW tone, style, and {{User}}/{{Char}} placeholders.
+    Return JSON with keys: backstory, opening.
+
+  # 3) wash_text — user prompt template
+  wash_text_user: |
+    Old name: {original_name}
+    New name: {new_name}
+
+    BACKSTORY:
+    {backstory}
+
+    OPENING:
+    {opening}
+
+  # 4) infer_card — system prompt (reverse-engineer Tavern V2 JSON)
+  infer_card_system: |
+    You are a character card author. Produce a complete Tavern AI
+    character card in chara_card_v2 'data' object format.
+    Include name, description, personality, first_mes, scenario,
+    mes_example, creator_notes, system_prompt, post_history_instructions,
+    tags, alternate_greetings, creator. Keep explicit NSFW content if present.
+    Return valid JSON only.
+
+  # 4) infer_card — user prompt template
+  infer_card_user: |
+    Character name: {name}
+    Tags: {tags}
+
+    BACKSTORY:
+    {backstory}
+
+    OPENING (first_mes):
+    {opening}
+
+    Avatar filename: {image_filename}
+
+  # 5) infer_from_chat — system prompt (reverse-engineer from chat messages)
+  infer_from_chat_system: |
+    You are a character card author. Analyze the following character
+    messages from a chat page and produce a complete Tavern AI character
+    card in chara_card_v2 'data' object format. Extract and infer:
+    - name: the character's name
+    - description: detailed character description based on the messages
+    - personality: personality traits, speaking style, mannerisms
+    - first_mes: create an appropriate opening message in the character's voice
+    - scenario: the setting/context implied by the messages
+    - mes_example: 2-3 example dialogue exchanges showing the character's voice
+    - creator_notes: notes about the character's roleplay style
+    - system_prompt: instructions for an AI to roleplay this character
+    - post_history_instructions: guidelines for maintaining character consistency
+    - tags: relevant tags for the character
+    - alternate_greetings: 2-3 alternative opening messages
+    - creator: 'Anonymous'
+    Keep explicit NSFW content if present. Return valid JSON only.
+
+  # 5) infer_from_chat — user prompt template
+  infer_from_chat_user: |
+    Character name: {character_name}
+
+    CHARACTER MESSAGES:
+    {chat_text}

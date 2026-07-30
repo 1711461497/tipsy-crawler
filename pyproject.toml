@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "tipsy-crawler"
+version = "0.2.0"
+description = "Tipsy.chat character card crawler — scan authors, scrape characters, wash images/text, reverse-engineer Tavern V2 JSON."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = [
+    "playwright>=1.40.0",
+    "beautifulsoup4>=4.12.0",
+    "aiohttp>=3.9.0",
+    "httpx>=0.25.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.1",
+    "tenacity>=8.2.0",
+    "Pillow>=10.0.0",
+]
+
+[project.scripts]
+tipsy-crawler = "tipsy_crawler.main:main"
+
+[tool.setuptools.packages.find]
+include = ["tipsy_crawler*"]
