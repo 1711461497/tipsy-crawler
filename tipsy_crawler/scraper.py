@@ -222,20 +222,23 @@ class TipsyScraper:
 
         # Fallback: if no structured memories found, try extracting chat messages
         if not backstory and not opening:
-            # Check if page has "No Memory" (nothing to extract)
             if "no memory" in body_text.lower()[:500]:
-                pass  # Leave empty
+                pass
             else:
                 char_msgs, user_msgs = self._extract_chat_messages(body_text, name)
                 if char_msgs:
-                    # Use character messages as backstory + opening
                     backstory = "\n\n".join(char_msgs)
                     opening = char_msgs[0] if char_msgs else ""
                     lang = "chat"
                     print(f"    [chat-fallback] extracted {len(char_msgs)} char messages, {len(user_msgs)} user messages")
 
-        # Also collect markdown image URLs from MAIN CHARACTER section
         main_images = self._extract_main_character_images(html) or main_images
+
+        # Extract cover URL from og:image meta tag
+        cover_url = ""
+        og = soup.find("meta", property="og:image")
+        if og and og.get("content"):
+            cover_url = og["content"]
 
         return RawCharacter(
             chat_id=chat_id,
@@ -245,7 +248,7 @@ class TipsyScraper:
             opening=opening,
             tags=tags,
             main_character_images=main_images,
-            cover_url="",
+            cover_url=cover_url,
             source_url=url,
             language=lang,
         )

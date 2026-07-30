@@ -37,6 +37,11 @@ def main() -> None:
         help="Override author profile URLs",
     )
     parser.add_argument(
+        "--char-urls",
+        nargs="+",
+        help="Character page URLs to process through the full pipeline",
+    )
+    parser.add_argument(
         "--chat-urls",
         nargs="+",
         help="Chat page URLs to scrape (outputs MD files for LLM reverse engineering)",
@@ -75,7 +80,17 @@ def main() -> None:
 
     pipeline = CrawlPipeline(config)
 
-    if args.chat_urls:
+    if args.char_urls:
+        # Direct character URL mode — full pipeline
+        asyncio.run(
+            pipeline.run_char_urls(
+                char_urls=args.char_urls,
+                wash_images=args.wash_images,
+                wash_text=args.wash_text,
+                infer_json=args.infer_json,
+            )
+        )
+    elif args.chat_urls:
         # Chat scraping mode
         asyncio.run(
             pipeline.run_chat_scrape(
