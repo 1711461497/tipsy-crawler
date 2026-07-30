@@ -65,15 +65,36 @@ class ImageWasher:
     def __init__(self, config: MuleRouterConfig):
         self.config = config
 
+    def _vendor(self) -> str:
+        """Detect vendor from model name."""
+        model = self.config.image_model.lower()
+        if "spicy" in model:
+            return "carrothub"
+        if "gpt-image" in model:
+            return "openai"
+        return "alibaba"
+
     def _route(self) -> str:
         """Route to vendor-specific endpoint with model name in path."""
         model = self.config.image_model
-        vendor = "carrothub" if "spicy" in model.lower() else "alibaba"
-        return f"{self.config.base_url.rstrip('/')}/vendors/{vendor}/v1/{model}/generation"
+        vendor = self._vendor()
+        # Only gpt-image models support the /edit endpoint;
+        # carrothub/alibaba models always use /generation
+        if "gpt-image" in model.lower():
+            mode = self.config.image_edit_mode
+        else:
+            mode = "generation"
+        return f"{self.config.base_url.rstrip('/')}/vendors/{vendor}/v1/{model}/{mode}"
 
     def _build_payload(self, b64_image: str, prompt: str, seed: Optional[int] = None) -> dict:
-        model = self.config.image_model
-        if "spicy" in model.lower():
+        model = self.config.image_model.lower()
+        if "gpt-image" in model:
+            # OpenAI gpt-image-2 edit format
+            payload = {"image": b64_image, "prompt": prompt}
+            if seed is not None:
+                payload["seed"] = seed
+            return payload
+        if "spicy" in model:
             payload = {"image": b64_image, "prompt": prompt}
             if seed is not None:
                 payload["seed"] = seed
@@ -172,8 +193,9 @@ class ImageWasher:
     ) -> dict:
         """Poll MuleRouter until task completes or times out (sync version)."""
         model = self.config.image_model
-        vendor = "carrothub" if "spicy" in model.lower() else "alibaba"
-        status_url = f"{self.config.base_url.rstrip('/')}/vendors/{vendor}/v1/{model}/generation/{task_id}"
+        vendor = self._vendor()
+        mode = self.config.image_edit_mode if "gpt-image" in model.lower() else "generation"
+        status_url = f"{self.config.base_url.rstrip('/')}/vendors/{vendor}/v1/{model}/{mode}/{task_id}"
         deadline = time.time() + max_poll_time
         while time.time() < deadline:
             resp = client.get(

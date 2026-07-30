@@ -37,7 +37,12 @@ tasks:
 mule_router:
   base_url: "https://api.mulerouter.ai"
   api_key: "${MULEROUTER_API_KEY}"
+  # 可选模型:
+  #   qwen-image-edit-spicy  (carrothub, 默认, 风格化编辑)
+  #   gpt-image-2            (openai, 更自然的编辑效果)
   image_model: "qwen-image-edit-spicy"
+  # edit = 基于原图编辑 (默认), generation = 纯文生图
+  image_edit_mode: "edit"
   poll_interval: 3
   max_poll_time: 300
 
@@ -100,16 +105,39 @@ prompts:
 
   # 3) wash_text — system prompt
   wash_text_system: |
-    You are a creative editor. Replace every occurrence of the old
-    character name with the new name, adjust relationship pronouns
-    only when necessary, and lightly rewrite to avoid verbatim copy.
-    Preserve NSFW tone, style, and {{User}}/{{Char}} placeholders.
-    Return JSON with keys: backstory, opening.
+    You are an expert creative editor specializing in character card
+    localization and rewriting. Your task is to SUBSTANTIALLY rewrite
+    the text while preserving 100% of the original content and meaning.
+
+    REWRITING RULES:
+    - Replace every occurrence of the old character name with the new name.
+    - Restructure sentences: change sentence order within paragraphs,
+      split long sentences, merge short ones, use different transitions.
+    - Use synonyms and alternative phrasing for at least 40% of the text.
+    - Change paragraph structure where natural (e.g. reorder descriptive
+      blocks, merge or split paragraphs).
+    - PRESERVE ALL of the following without omission:
+      * World-building details (locations, lore, rules, factions)
+      * Character traits, appearance, mannerisms, speech patterns
+      * Relationship dynamics and backstory events
+      * Plot hooks, scenario setup, and narrative tension
+      * NSFW/explicit content, tone, and intensity — do NOT sanitize
+      * {{user}} and {{char}} placeholders exactly as-is
+      * Markdown formatting (*italics*, **bold**, etc.)
+    - The output MUST be approximately the same length as the input.
+      Do NOT summarize, truncate, or omit any section.
+    - Write in the SAME LANGUAGE as the original text.
+
+    Return JSON with exactly two keys: "backstory" and "opening".
 
   # 3) wash_text — user prompt template
   wash_text_user: |
     Old name: {original_name}
     New name: {new_name}
+
+    Rewrite the following text. Remember: substantially reword (40%+
+    different phrasing) but keep EVERY detail, scene, and nuance.
+    Do not drop any content. Maintain the same language.
 
     BACKSTORY:
     {backstory}
@@ -119,22 +147,82 @@ prompts:
 
   # 4) infer_card — system prompt (reverse-engineer Tavern V2 JSON)
   infer_card_system: |
-    You are a character card author. Produce a complete Tavern AI
-    character card in chara_card_v2 'data' object format.
-    Include name, description, personality, first_mes, scenario,
-    mes_example, creator_notes, system_prompt, post_history_instructions,
-    tags, alternate_greetings, creator. Keep explicit NSFW content if present.
-    Return valid JSON only.
+    You are an expert character card author for Tavern AI / SillyTavern.
+    Produce a COMPLETE chara_card_v2 "data" object by deeply analyzing
+    the provided backstory and opening message.
+
+    FIELD-BY-FIELD REQUIREMENTS:
+
+    "name": The character's full name.
+
+    "description" (500+ chars): Comprehensive character profile covering:
+    - Physical appearance (body type, hair, eyes, distinguishing features)
+    - Core personality traits with behavioral examples
+    - Background summary (origin, occupation, key life events)
+    - Speech patterns, verbal tics, language style
+    - Likes, dislikes, fears, motivations
+    - Relationship to {{user}} and how they interact
+    Use {{char}} for the character name and {{user}} for the user.
+
+    "personality" (300+ chars): Detailed personality breakdown including:
+    - Dominant traits (e.g. tsundere, stoic, flirtatious) with nuance
+    - How they behave under stress, in combat, in intimate scenes
+    - Contradictions and complexity in their character
+    - Moral alignment and ethical boundaries
+
+    "first_mes": Use the provided opening text verbatim. This is critical.
+
+    "scenario" (200+ chars): The setting and situation context:
+    - Where and when the story takes place
+    - The world's rules (supernatural elements, technology level)
+    - The initial situation that brings {{char}} and {{user}} together
+    - Any ongoing conflicts or tensions
+
+    "mes_example" (800+ chars): 2-3 example dialogue exchanges in this
+    exact format:
+    <START>
+    {{user}}: [user action/dialogue]
+    {{char}}: [character response showing their voice, mannerisms]
+    Include at least one NSFW example if the character has explicit content.
+    Each exchange should demonstrate a different emotional register.
+
+    "creator_notes": Brief notes on roleplay style, tone expectations,
+    and any content warnings.
+
+    "system_prompt" (300+ chars): Detailed instructions for the AI:
+    - How to embody {{char}}'s personality consistently
+    - Narrative style (POV, tense, prose density)
+    - How to handle NSFW scenes (pacing, detail level, language)
+    - What to avoid (breaking character, modern slang if fantasy, etc.)
+
+    "post_history_instructions": Reminders for maintaining consistency
+    across long conversations (stay in character, remember established
+    facts, escalate tension naturally).
+
+    "tags": 5-10 relevant tags (genre, tropes, character archetypes).
+
+    "alternate_greetings": Array of 2-3 alternative opening messages,
+    each showing a different scenario or mood. Each should be 200+ chars
+    and written in the same style as first_mes.
+
+    "creator": "Anonymous"
+    "avatar": use the provided avatar filename
+
+    Keep ALL explicit/NSFW content. Return valid JSON only, no markdown.
 
   # 4) infer_card — user prompt template
   infer_card_user: |
     Character name: {name}
     Tags: {tags}
 
+    Analyze the following material deeply and produce a rich, detailed
+    character card. Every field must be thorough — do not write thin
+    or generic descriptions.
+
     BACKSTORY:
     {backstory}
 
-    OPENING (first_mes):
+    OPENING (use as first_mes verbatim):
     {opening}
 
     Avatar filename: {image_filename}

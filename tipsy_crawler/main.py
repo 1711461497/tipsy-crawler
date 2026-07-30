@@ -67,6 +67,12 @@ def main() -> None:
         help="Run JSON inference (requires LLM API key)",
     )
     parser.add_argument(
+        "--image-model",
+        type=str,
+        default=None,
+        help="Override image wash model (e.g. gpt-image-2, qwen-image-edit-spicy)",
+    )
+    parser.add_argument(
         "--headless",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -77,6 +83,8 @@ def main() -> None:
     config = load_config(args.config)
     config.crawler.output_dir = args.output
     config.crawler.headless = args.headless
+    if args.image_model:
+        config.mule_router.image_model = args.image_model
 
     pipeline = CrawlPipeline(config)
 

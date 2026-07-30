@@ -52,6 +52,7 @@ class MuleRouterConfig(BaseModel):
     base_url: str = "https://api.mulerouter.ai"
     api_key: str
     image_model: str = "qwen-image-edit-spicy"
+    image_edit_mode: str = "edit"  # "edit" or "generation"
     poll_interval: int = 3
     max_poll_time: int = 300
 
