@@ -226,6 +226,9 @@ class CrawlPipeline:
         infer_json: bool,
     ) -> None:
         """Process a character through API-only steps (no browser needed)."""
+        # Download all character images from main_character_images
+        await self._download_character_images(raw, char_dir)
+
         washed_cover_path: Optional[Path] = None
         if wash_images and cover_path:
             washed_cover = char_dir / "cover_image_washed.jpg"
@@ -283,6 +286,42 @@ class CrawlPipeline:
                 json.dumps(card, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             print(f"[infer json] {char_dir / 'character.json'}")
+
+    async def _download_character_images(
+        self, raw: RawCharacter, char_dir: Path
+    ) -> None:
+        """Download all unique images from main_character_images."""
+        urls = list(dict.fromkeys(raw.main_character_images))  # dedupe, keep order
+        if not urls:
+            return
+
+        images_dir = char_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+
+        def _sync_download() -> int:
+            import httpx as _httpx
+            count = 0
+            with _httpx.Client(timeout=60, trust_env=False, follow_redirects=True) as client:
+                for i, url in enumerate(urls, 1):
+                    # Extract filename from URL path
+                    fname = url.rstrip("/").split("/")[-1].split("?")[0]
+                    if not fname or "." not in fname:
+                        fname = f"image_{i}.jpg"
+                    dest = images_dir / fname
+                    if dest.exists():
+                        count += 1
+                        continue
+                    try:
+                        resp = client.get(url)
+                        resp.raise_for_status()
+                        dest.write_bytes(resp.content)
+                        count += 1
+                    except Exception as exc:
+                        print(f"    [img error] {fname}: {exc}")
+            return count
+
+        total = await asyncio.to_thread(_sync_download)
+        print(f"[images] {total}/{len(urls)} downloaded -> {images_dir.name}/")
 
     async def run_chat_scrape(
         self,
