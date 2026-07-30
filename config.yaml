@@ -7,7 +7,7 @@ providers:
     base_url: "https://api.deepseek.com"
     api_key: "${DEEPSEEK_API_KEY}"
     default_model: "deepseek-chat"
-    timeout: 60
+    timeout: 180
 
   openai:
     base_url: "https://api.openai.com/v1"

@@ -1,5 +1,6 @@
 """Switchable LLM provider abstraction for text tasks."""
 
+import asyncio
 import json
 import re
 from typing import Any, Optional
@@ -69,7 +70,11 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         response_format: Optional[dict[str, Any]] = None,
     ) -> str:
-        """Send a chat completion request for the configured task."""
+        """Send a chat completion request for the configured task.
+
+        Uses sync httpx in a worker thread to avoid event loop conflicts
+        with Playwright (which can cause ConnectError on some systems).
+        """
         task_cfg, provider = self._resolve(task)
         model = task_cfg.model or provider.default_model
 
@@ -83,18 +88,21 @@ class LLMClient:
         if response_format:
             payload["response_format"] = response_format
 
-        async with httpx.AsyncClient(timeout=provider.timeout) as client:
-            resp = await client.post(
-                f"{provider.base_url.rstrip('/')}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {provider.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+        def _sync_request() -> str:
+            with httpx.Client(timeout=provider.timeout, trust_env=False) as client:
+                resp = client.post(
+                    f"{provider.base_url.rstrip('/')}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {provider.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return data["choices"][0]["message"]["content"]
+
+        return await asyncio.to_thread(_sync_request)
 
     async def generate_name(self, original_name: str, backstory: str) -> str:
         """Generate a new character name that fits the backstory."""

@@ -29,7 +29,14 @@ class CrawlPipeline:
         wash_text: bool = False,
         infer_json: bool = False,
     ) -> None:
-        """Run a minimal end-to-end scrape for the given authors."""
+        """Run a minimal end-to-end scrape for the given authors.
+
+        Split into two phases to avoid Playwright/httpx conflicts:
+        Phase 1 (browser): scan authors + fetch pages + download covers
+        Phase 2 (API): wash images + wash text + infer JSON
+        """
+        # Phase 1: Browser operations
+        fetched: list[tuple[CharacterMeta, RawCharacter, Optional[Path]]] = []
         async with TipsyScraper(
             headless=self.config.crawler.headless,
             use_stealth=self.config.crawler.use_stealth,
@@ -51,7 +58,9 @@ class CrawlPipeline:
             selected = all_meta[:max_chars]
             for meta in selected:
                 try:
-                    await self._process_character(scraper, meta, wash_images, wash_text, infer_json)
+                    # Fetch + download while browser is open
+                    raw, cover_path = await self._fetch_character(scraper, meta)
+                    fetched.append((meta, raw, cover_path))
                 except Exception as exc:
                     print(f"[error] {meta.name} ({meta.chat_id}): {exc}")
                     import traceback
@@ -59,22 +68,31 @@ class CrawlPipeline:
                     continue
                 await asyncio.sleep(self.config.crawler.request_delay_ms / 1000)
 
-    async def _process_character(
+        # Browser is now closed — Phase 2: API operations
+        for meta, raw, cover_path in fetched:
+            try:
+                char_dir = self.output_dir / meta.author_uid / meta.chat_id
+                await self._process_character_api(
+                    raw, char_dir, cover_path, wash_images, wash_text, infer_json
+                )
+            except Exception as exc:
+                print(f"[error] {raw.name} ({raw.chat_id}): {exc}")
+                import traceback
+                traceback.print_exc()
+                continue
+
+    async def _fetch_character(
         self,
         scraper: TipsyScraper,
         meta: CharacterMeta,
-        wash_images: bool,
-        wash_text: bool,
-        infer_json: bool,
-    ) -> None:
-        """Process a single character through the pipeline."""
+    ) -> tuple[RawCharacter, Optional[Path]]:
+        """Fetch raw data and download cover (browser phase only)."""
         char_dir = self.output_dir / meta.author_uid / meta.chat_id
         raw_dir = char_dir / "raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
 
         print(f"[fetch] {meta.name} ({meta.chat_id})")
         raw = await scraper.fetch_character(meta.chat_id)
-        # Use meta's cover_url if available, otherwise keep og:image from page
         if meta.cover_url:
             raw.cover_url = meta.cover_url
 
@@ -85,26 +103,133 @@ class CrawlPipeline:
             raw.model_dump_json(indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
-        # Download cover image using browser context to carry cookies
-        cover_dest = raw_dir / "cover_image"
-        try:
-            cover_path = await scraper.download_with_browser(meta.cover_url, cover_dest)
-            # Infer extension from content-type if missing and rename
-            ext = _ext_from_url(meta.cover_url) or ".jpg"
-            if cover_path.suffix != ext:
-                new_path = cover_path.with_suffix(ext)
-                cover_path.rename(new_path)
-                cover_path = new_path
-            print(f"[download] {cover_path.name}")
-        except Exception as exc:
-            print(f"[download error] {meta.chat_id}: {exc}")
-            cover_path = None
+        # Download cover
+        cover_path = None
+        if raw.cover_url:
+            cover_dest = raw_dir / "cover_image"
+            try:
+                cover_path = await scraper.download_with_browser(raw.cover_url, cover_dest)
+                ext = _ext_from_url(raw.cover_url) or ".jpg"
+                if cover_path.suffix != ext:
+                    new_path = cover_path.with_suffix(ext)
+                    cover_path.rename(new_path)
+                    cover_path = new_path
+                print(f"[download] {cover_path.name}")
+            except Exception as exc:
+                print(f"[download error] {meta.chat_id}: {exc}")
 
+        return raw, cover_path
+
+    def _save_authors_index(self, authors: list[AuthorInfo]) -> None:
+        """Write authors.json index to output root."""
+        path = self.output_dir / "authors.json"
+        data = [a.model_dump(mode="json") for a in authors]
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    async def run_char_urls(
+        self,
+        char_urls: list[str],
+        wash_images: bool = False,
+        wash_text: bool = False,
+        infer_json: bool = False,
+    ) -> None:
+        """Process specific character URLs through the full pipeline.
+
+        Split into two phases to avoid Playwright/httpx event loop conflicts:
+        Phase 1 (browser): fetch pages + download covers
+        Phase 2 (API): wash images + wash text + infer JSON
+        """
+        import re
+
+        # Phase 1: Browser operations — fetch + download
+        fetched: list[tuple[CharacterMeta, RawCharacter, Optional[Path]]] = []
+        async with TipsyScraper(
+            headless=self.config.crawler.headless,
+            use_stealth=self.config.crawler.use_stealth,
+            request_delay_ms=self.config.crawler.request_delay_ms,
+        ) as scraper:
+            for url in char_urls:
+                match = re.search(r"/chat/(\d+)", url)
+                if not match:
+                    print(f"[error] Cannot extract chat_id from: {url}")
+                    continue
+                chat_id = match.group(1)
+                try:
+                    raw = await scraper.fetch_character(chat_id)
+                    author_uid = "direct"
+                    cover_match = re.search(r"/(\d{10,})_", raw.cover_url or "")
+                    if cover_match:
+                        author_uid = cover_match.group(1)
+
+                    meta = CharacterMeta(
+                        name=raw.name,
+                        chat_id=chat_id,
+                        cover_url=raw.cover_url,
+                        profile_url="",
+                        author_uid=author_uid,
+                    )
+
+                    # Save raw data + download cover while browser is open
+                    char_dir = self.output_dir / author_uid / chat_id
+                    raw_dir = char_dir / "raw"
+                    raw_dir.mkdir(parents=True, exist_ok=True)
+                    (raw_dir / "backstory.txt").write_text(raw.backstory, encoding="utf-8")
+                    (raw_dir / "opening.txt").write_text(raw.opening, encoding="utf-8")
+                    (raw_dir / "meta.json").write_text(
+                        raw.model_dump_json(indent=2, ensure_ascii=False), encoding="utf-8"
+                    )
+
+                    cover_path = None
+                    if raw.cover_url:
+                        from .downloader import _ext_from_url
+                        cover_dest = raw_dir / "cover_image"
+                        try:
+                            cover_path = await scraper.download_with_browser(raw.cover_url, cover_dest)
+                            ext = _ext_from_url(raw.cover_url) or ".jpg"
+                            if cover_path.suffix != ext:
+                                new_path = cover_path.with_suffix(ext)
+                                cover_path.rename(new_path)
+                                cover_path = new_path
+                            print(f"[download] {cover_path.name}")
+                        except Exception as exc:
+                            print(f"[download error] {chat_id}: {exc}")
+
+                    print(f"[fetch] {raw.name} ({chat_id})")
+                    fetched.append((meta, raw, cover_path))
+                except Exception as exc:
+                    print(f"[error] chat {chat_id}: {exc}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
+                await asyncio.sleep(self.config.crawler.request_delay_ms / 1000)
+
+        # Browser is now closed — Phase 2: API operations
+        for meta, raw, cover_path in fetched:
+            try:
+                char_dir = self.output_dir / meta.author_uid / meta.chat_id
+                await self._process_character_api(
+                    raw, char_dir, cover_path, wash_images, wash_text, infer_json
+                )
+            except Exception as exc:
+                print(f"[error] {raw.name} ({raw.chat_id}): {exc}")
+                import traceback
+                traceback.print_exc()
+                continue
+
+    async def _process_character_api(
+        self,
+        raw: RawCharacter,
+        char_dir: Path,
+        cover_path: Optional[Path],
+        wash_images: bool,
+        wash_text: bool,
+        infer_json: bool,
+    ) -> None:
+        """Process a character through API-only steps (no browser needed)."""
         washed_cover_path: Optional[Path] = None
         if wash_images and cover_path:
             washed_cover = char_dir / "cover_image_washed.jpg"
             if self.config.mule_router.api_key:
-                # Generate a character-aware image wash prompt
                 wash_prompt = None
                 try:
                     llm = LLMClient(self.config)
@@ -135,8 +260,7 @@ class CrawlPipeline:
                 cover_path=washed_cover_path or cover_path,
             )
             (char_dir / "washed.json").write_text(
-                washed_text.model_dump_json(indent=2, ensure_ascii=False),
-                encoding="utf-8",
+                washed_text.model_dump_json(indent=2, ensure_ascii=False), encoding="utf-8"
             )
             print(f"[wash text] {raw.name} -> {new_name}")
 
@@ -159,57 +283,6 @@ class CrawlPipeline:
                 json.dumps(card, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             print(f"[infer json] {char_dir / 'character.json'}")
-
-    def _save_authors_index(self, authors: list[AuthorInfo]) -> None:
-        """Write authors.json index to output root."""
-        path = self.output_dir / "authors.json"
-        data = [a.model_dump(mode="json") for a in authors]
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    async def run_char_urls(
-        self,
-        char_urls: list[str],
-        wash_images: bool = False,
-        wash_text: bool = False,
-        infer_json: bool = False,
-    ) -> None:
-        """Process specific character URLs through the full pipeline."""
-        import re
-
-        async with TipsyScraper(
-            headless=self.config.crawler.headless,
-            use_stealth=self.config.crawler.use_stealth,
-            request_delay_ms=self.config.crawler.request_delay_ms,
-        ) as scraper:
-            for url in char_urls:
-                match = re.search(r"/chat/(\d+)", url)
-                if not match:
-                    print(f"[error] Cannot extract chat_id from: {url}")
-                    continue
-                chat_id = match.group(1)
-                try:
-                    # First fetch to get character data + cover URL
-                    raw = await scraper.fetch_character(chat_id)
-                    # Try to extract author_uid from cover URL pattern: {author_uid}_{img_id}.jpg
-                    author_uid = "direct"
-                    cover_match = re.search(r"/(\d{10,})_", raw.cover_url or "")
-                    if cover_match:
-                        author_uid = cover_match.group(1)
-
-                    meta = CharacterMeta(
-                        name=raw.name,
-                        chat_id=chat_id,
-                        cover_url=raw.cover_url,
-                        profile_url="",
-                        author_uid=author_uid,
-                    )
-                    await self._process_character(scraper, meta, wash_images, wash_text, infer_json)
-                except Exception as exc:
-                    print(f"[error] chat {chat_id}: {exc}")
-                    import traceback
-                    traceback.print_exc()
-                    continue
-                await asyncio.sleep(self.config.crawler.request_delay_ms / 1000)
 
     async def run_chat_scrape(
         self,

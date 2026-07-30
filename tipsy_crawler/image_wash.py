@@ -92,7 +92,11 @@ class ImageWasher:
         prompt: Optional[str] = None,
         seed: Optional[int] = None,
     ) -> Path:
-        """Submit image wash task, poll, and save result."""
+        """Submit image wash task, poll, and save result.
+
+        Uses sync httpx in a worker thread to avoid event loop conflicts
+        with Playwright (which can cause ConnectError on some systems).
+        """
         prompt = prompt or (
             "Slightly adjust the character's hair and outfit color palette to a "
             "different but harmonious scheme. Keep pose, face, expression, and "
@@ -115,56 +119,66 @@ class ImageWasher:
 
         url = self._route()
         payload = self._build_payload(b64_image, prompt, seed)
+        api_key = self.config.api_key
+        poll_interval = self.config.poll_interval
+        max_poll_time = self.config.max_poll_time
 
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                url,
-                headers={"Authorization": f"Bearer {self.config.api_key}"},
-                json=payload,
-            )
-            resp.raise_for_status()
-            task_data = resp.json()
-            task_id = (
-                task_data.get("task_id")
-                or task_data.get("id")
-                or (task_data.get("task_info", {}) or {}).get("id")
-            )
-            if not task_id:
-                raise RuntimeError(f"No task_id in response: {task_data}")
-            print(f"    [task] id={task_id}")
-
-            result = await self._poll_task(client, task_id)
-
-            # MuleRouter returns {"images": ["url1", ...]} at top level
-            images = result.get("images", [])
-            image_url = images[0] if images else None
-            # Fallback: check other possible locations
-            if not image_url:
-                image_url = (
-                    result.get("output", {}).get("url")
-                    or result.get("image_url")
-                    or (result.get("task_info", {}) or {}).get("output", {}).get("url")
+        def _sync_wash() -> Path:
+            """Run the entire network flow (submit → poll → download) in sync httpx."""
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                resp = client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json=payload,
                 )
-            if not image_url:
-                raise RuntimeError(f"No image URL in task result: {result}")
-            print(f"    [result] {image_url[:120]}...")
+                resp.raise_for_status()
+                task_data = resp.json()
+                task_id = (
+                    task_data.get("task_id")
+                    or task_data.get("id")
+                    or (task_data.get("task_info", {}) or {}).get("id")
+                )
+                if not task_id:
+                    raise RuntimeError(f"No task_id in response: {task_data}")
+                print(f"    [task] id={task_id}")
 
-            img_resp = await client.get(image_url)
-            img_resp.raise_for_status()
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(img_resp.content)
-            return output_path
+                result = self._poll_task_sync(client, task_id, api_key, poll_interval, max_poll_time)
 
-    async def _poll_task(self, client: httpx.AsyncClient, task_id: str) -> dict:
-        """Poll MuleRouter until task completes or times out."""
+                # MuleRouter returns {"images": ["url1", ...]} at top level
+                images = result.get("images", [])
+                image_url = images[0] if images else None
+                # Fallback: check other possible locations
+                if not image_url:
+                    image_url = (
+                        result.get("output", {}).get("url")
+                        or result.get("image_url")
+                        or (result.get("task_info", {}) or {}).get("output", {}).get("url")
+                    )
+                if not image_url:
+                    raise RuntimeError(f"No image URL in task result: {result}")
+                print(f"    [result] {image_url[:120]}...")
+
+                img_resp = client.get(image_url)
+                img_resp.raise_for_status()
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(img_resp.content)
+                return output_path
+
+        return await asyncio.to_thread(_sync_wash)
+
+    def _poll_task_sync(
+        self, client: httpx.Client, task_id: str, api_key: str,
+        poll_interval: int, max_poll_time: int,
+    ) -> dict:
+        """Poll MuleRouter until task completes or times out (sync version)."""
         model = self.config.image_model
         vendor = "carrothub" if "spicy" in model.lower() else "alibaba"
         status_url = f"{self.config.base_url.rstrip('/')}/vendors/{vendor}/v1/{model}/generation/{task_id}"
-        deadline = time.time() + self.config.max_poll_time
+        deadline = time.time() + max_poll_time
         while time.time() < deadline:
-            resp = await client.get(
+            resp = client.get(
                 status_url,
-                headers={"Authorization": f"Bearer {self.config.api_key}"},
+                headers={"Authorization": f"Bearer {api_key}"},
             )
             resp.raise_for_status()
             data = resp.json()
@@ -178,7 +192,7 @@ class ImageWasher:
             if status in ("failed", "error"):
                 detail = (data.get("task_info", {}) or {}).get("error") or data.get("error", data)
                 raise RuntimeError(f"Image wash failed: {detail}")
-            await asyncio.sleep(self.config.poll_interval)
+            time.sleep(poll_interval)
         raise TimeoutError(f"Image wash polling timed out for task {task_id}")
 
 
