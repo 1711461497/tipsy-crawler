@@ -58,6 +58,16 @@ tipsy-crawler -c config.yaml --chat-urls "https://tipsy.chat/chat/12345" "https:
 
 Manually provide chat URLs → scrape chat messages → output MD files → LLM reverse-engineers character cards.
 
+### Direct character URL mode (recommended)
+
+```bash
+tipsy-crawler -c config.yaml \
+  --char-urls "https://tipsy.chat/chat/12345" "https://tipsy.chat/chat/67890" \
+  --wash-images --wash-text --infer-json
+```
+
+Pass character page URLs directly → full pipeline: fetch memories + chat records → download cover → wash image → wash text → generate Tavern V2 JSON. Works with any character URL format (`/chat/12345`, `/chat/12345/public`).
+
 ### CLI options
 
 | Flag | Description |
@@ -66,6 +76,7 @@ Manually provide chat URLs → scrape chat messages → output MD files → LLM 
 | `-o, --output` | Output directory |
 | `-n, --max-chars` | Max characters per author (default: 3) |
 | `-a, --authors` | Override author profile URLs |
+| `--char-urls` | Character page URLs for full pipeline processing |
 | `--chat-urls` | Chat page URLs for chat scraping mode |
 | `--infer-from-chat` | Run LLM inference after chat scraping |
 | `--wash-images` | Enable image washing (needs MuleRouter API key) |
