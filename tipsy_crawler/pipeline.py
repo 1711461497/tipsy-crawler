@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +21,28 @@ class CrawlPipeline:
         self.config = config
         self.output_dir = config.crawler.output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _safe_filename(name: str, max_len: int = 40) -> str:
+        """Sanitize a string for use in folder/file names.
+
+        Keeps letters, digits, CJK characters, whitespace, hyphens and
+        underscores; collapses runs of whitespace/underscores into a single
+        underscore; trims leading/trailing separators.
+        """
+        safe = re.sub(r"[^\w\s-]", "", name, flags=re.UNICODE)
+        safe = re.sub(r"[\s_]+", "_", safe.strip())
+        safe = safe.strip("_-")
+        safe = safe[:max_len].strip("_-")
+        return safe or "unknown"
+
+    def _char_dir(self, meta: CharacterMeta) -> Path:
+        """Return the output directory for a character.
+
+        Format: <output_dir>/<author_uid>/<safe_name>_<chat_id>
+        """
+        slug = self._safe_filename(meta.name)
+        return self.output_dir / meta.author_uid / f"{slug}_{meta.chat_id}"
 
     async def run_mvp(
         self,
@@ -71,7 +94,7 @@ class CrawlPipeline:
         # Browser is now closed — Phase 2: API operations
         for meta, raw, cover_path in fetched:
             try:
-                char_dir = self.output_dir / meta.author_uid / meta.chat_id
+                char_dir = self._char_dir(meta)
                 await self._process_character_api(
                     raw, char_dir, cover_path, wash_images, wash_text, infer_json
                 )
@@ -87,7 +110,7 @@ class CrawlPipeline:
         meta: CharacterMeta,
     ) -> tuple[RawCharacter, Optional[Path]]:
         """Fetch raw data and download cover (browser phase only)."""
-        char_dir = self.output_dir / meta.author_uid / meta.chat_id
+        char_dir = self._char_dir(meta)
         raw_dir = char_dir / "raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
 
@@ -139,8 +162,6 @@ class CrawlPipeline:
         Phase 1 (browser): fetch pages + download covers
         Phase 2 (API): wash images + wash text + infer JSON
         """
-        import re
-
         # Phase 1: Browser operations — fetch + download
         fetched: list[tuple[CharacterMeta, RawCharacter, Optional[Path]]] = []
         async with TipsyScraper(
@@ -170,7 +191,7 @@ class CrawlPipeline:
                     )
 
                     # Save raw data + download cover while browser is open
-                    char_dir = self.output_dir / author_uid / chat_id
+                    char_dir = self._char_dir(meta)
                     raw_dir = char_dir / "raw"
                     raw_dir.mkdir(parents=True, exist_ok=True)
                     (raw_dir / "backstory.txt").write_text(raw.backstory, encoding="utf-8")
@@ -206,7 +227,7 @@ class CrawlPipeline:
         # Browser is now closed — Phase 2: API operations
         for meta, raw, cover_path in fetched:
             try:
-                char_dir = self.output_dir / meta.author_uid / meta.chat_id
+                char_dir = self._char_dir(meta)
                 await self._process_character_api(
                     raw, char_dir, cover_path, wash_images, wash_text, infer_json
                 )
@@ -362,11 +383,12 @@ class CrawlPipeline:
         record = await scraper.scrape_chat_page(chat_url)
 
         # Create output directory
-        char_dir = self.output_dir / "chat_records" / record.chat_id
+        slug = self._safe_filename(record.character_name)
+        char_dir = self.output_dir / "chat_records" / f"{slug}_{record.chat_id}"
         char_dir.mkdir(parents=True, exist_ok=True)
 
         # Write MD file with character messages only
-        md_path = char_dir / f"{record.character_name.replace(' ', '_')}_messages.md"
+        md_path = char_dir / f"{slug}_messages.md"
         md_content = f"# {record.character_name}\n\n"
         for i, msg in enumerate(record.messages, 1):
             md_content += f"## Message {i}\n\n{msg}\n\n---\n\n"
