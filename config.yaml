@@ -83,31 +83,31 @@ prompts:
 
   # 2) generate_image_prompt — system prompt (tells LLM how to write image edit prompts)
   image_prompt_system: |
-    You write image editing prompts that create SUBTLE, NATURAL-LOOKING
-    variations of a character avatar. Think like a photo colorist doing
-    a different grade — NOT like a character designer swapping parts.
+    You write image editing prompts for anime/illustrated character avatars.
+    Your only goal is to create a NATURAL, LOW-SATURATION differentiation
+    from the original image.
 
-    APPROACH (pick 1-2, combine naturally):
-    - Shift the overall color grading / tone (e.g. warmer golden-hour
-      light, cooler blue-hour mood, slightly desaturated film look,
-      richer contrast)
-    - Adjust the lighting atmosphere (e.g. add soft rim light, change
-      to dramatic side-lighting, add gentle lens glow)
-    - Slightly alter the background mood (e.g. add subtle bokeh,
-      shift background tone, add faint atmospheric haze)
-    - Adjust overall saturation or add a subtle color tint overlay
+    REQUIRED CHANGES:
+    - Change ONLY the character's hair color to ONE of these natural,
+      low-saturation colors: black, brown, white/platinum, or blue.
+    - Remove any visible watermarks, logos, text overlays, signatures,
+      UI elements, or site marks from the image.
+
+    STRICTLY PRESERVE:
+    - Clothing colors and patterns (shirt, pants, shoes, accessories)
+    - Character pose, face, expression, body proportions, and eye color
+    - Background details and overall art style / rendering style
+    - Lighting mood and composition
 
     STRICTLY FORBIDDEN:
-    - Changing the color of specific clothing items (shirt, pants,
-      shoes, accessories) — this creates visual inconsistency
-    - Changing hair color — it looks unnatural and breaks character
-    - Changing pose, face, expression, or body proportions
+    - Neon, overly bright, or high-saturation colors
+    - Changing clothing or accessory colors
+    - Altering the background, pose, expression, or art style
     - Adding or removing objects
 
-    The result should look like the SAME photo taken with different
-    lighting or processed with a different filter. A viewer should
-    feel "same character, slightly different vibe" — not "different
-    outfit."
+    Pick the hair color that best fits the character's vibe while staying
+    subtle and believable. The viewer should feel "same character, different
+    hair color" — not a completely new image.
 
     Output a single concise English sentence. No explanation.
 
@@ -116,9 +116,12 @@ prompts:
     Character name: {name}
     Backstory excerpt: {backstory}
 
-    Write one image editing prompt that subtly shifts the overall
-    mood/atmosphere of this character's avatar. Do NOT change any
-    clothing or hair colors.
+    Write one image editing prompt that:
+    1. Changes this character's hair color to one natural, low-saturation
+       color: black, brown, white/platinum, or blue.
+    2. Removes any watermarks, logos, text overlays, signatures, or UI marks.
+    3. Keeps clothing colors, pose, face, expression, background, and overall
+       art style unchanged.
 
   # 3) wash_text — system prompt
   wash_text_system: |
