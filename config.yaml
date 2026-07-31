@@ -83,25 +83,42 @@ prompts:
 
   # 2) generate_image_prompt — system prompt (tells LLM how to write image edit prompts)
   image_prompt_system: |
-    You write concise image editing prompts for an AI image editor.
-    The goal is to slightly alter a character's avatar so it looks
-    different from the original while still fitting the character's
-    personality and aesthetic.
-    Rules:
-    - NEVER use pink or pastel pink hair.
-    - Pick hair/outfit colors that match the character's vibe
-      (e.g. dark tones for villains, warm tones for heroes, etc.).
-    - Keep changes subtle: shift color palette, adjust outfit style,
-      add/remove small accessories.
-    - Keep pose, face structure, expression, and background unchanged.
-    - Output a single English sentence, no explanation.
+    You write image editing prompts that create SUBTLE, NATURAL-LOOKING
+    variations of a character avatar. Think like a photo colorist doing
+    a different grade — NOT like a character designer swapping parts.
+
+    APPROACH (pick 1-2, combine naturally):
+    - Shift the overall color grading / tone (e.g. warmer golden-hour
+      light, cooler blue-hour mood, slightly desaturated film look,
+      richer contrast)
+    - Adjust the lighting atmosphere (e.g. add soft rim light, change
+      to dramatic side-lighting, add gentle lens glow)
+    - Slightly alter the background mood (e.g. add subtle bokeh,
+      shift background tone, add faint atmospheric haze)
+    - Adjust overall saturation or add a subtle color tint overlay
+
+    STRICTLY FORBIDDEN:
+    - Changing the color of specific clothing items (shirt, pants,
+      shoes, accessories) — this creates visual inconsistency
+    - Changing hair color — it looks unnatural and breaks character
+    - Changing pose, face, expression, or body proportions
+    - Adding or removing objects
+
+    The result should look like the SAME photo taken with different
+    lighting or processed with a different filter. A viewer should
+    feel "same character, slightly different vibe" — not "different
+    outfit."
+
+    Output a single concise English sentence. No explanation.
 
   # 2) generate_image_prompt — user prompt template
   image_prompt_user: |
     Character name: {name}
     Backstory excerpt: {backstory}
 
-    Write one image editing prompt for this character.
+    Write one image editing prompt that subtly shifts the overall
+    mood/atmosphere of this character's avatar. Do NOT change any
+    clothing or hair colors.
 
   # 3) wash_text — system prompt
   wash_text_system: |
@@ -147,82 +164,94 @@ prompts:
 
   # 4) infer_card — system prompt (reverse-engineer Tavern V2 JSON)
   infer_card_system: |
-    You are an expert character card author for Tavern AI / SillyTavern.
-    Produce a COMPLETE chara_card_v2 "data" object by deeply analyzing
-    the provided backstory and opening message.
+    You are a veteran roleplay community author who has written hundreds
+    of character cards for SillyTavern / Tavern AI. You write cards that
+    feel CRAFTED BY A HUMAN — vivid, specific, with personality bleeding
+    through every field. You never write generic AI slop.
 
-    FIELD-BY-FIELD REQUIREMENTS:
+    STYLE RULES (critical):
+    - Write in flowing, natural prose. NO bullet points, NO lists,
+      NO "Trait: description" formatting inside field values.
+    - Be SPECIFIC: "a chipped black canine when he smirks" not
+      "distinctive facial features."
+    - Let the character's VOICE leak into description and personality.
+      If they're sarcastic, the description should have an edge.
+    - Avoid AI clichés: "a complex individual," "multifaceted
+      personality," "navigating the complexities of," "a tapestry of."
+    - Write as if you're pitching this character to a fellow RP enthusiast.
 
-    "name": The character's full name.
+    USE THE PROVIDED TAGS as design anchors. If tags say "Tsundere,"
+    the personality must show tsundere mechanics (hostility masking
+    affection, specific behavioral triggers). If tags say "Enemies to
+    Lovers," the scenario and description must set up that tension.
+    Every tag should be visibly reflected in at least one field.
 
-    "description" (500+ chars): Comprehensive character profile covering:
-    - Physical appearance (body type, hair, eyes, distinguishing features)
-    - Core personality traits with behavioral examples
-    - Background summary (origin, occupation, key life events)
-    - Speech patterns, verbal tics, language style
-    - Likes, dislikes, fears, motivations
-    - Relationship to {{user}} and how they interact
-    Use {{char}} for the character name and {{user}} for the user.
+    FIELDS TO PRODUCE (do NOT include first_mes — it is handled separately):
 
-    "personality" (300+ chars): Detailed personality breakdown including:
-    - Dominant traits (e.g. tsundere, stoic, flirtatious) with nuance
-    - How they behave under stress, in combat, in intimate scenes
-    - Contradictions and complexity in their character
-    - Moral alignment and ethical boundaries
+    "name": Character's full name.
 
-    "first_mes": Use the provided opening text verbatim. This is critical.
+    "description" (500+ chars): A vivid character portrait. Cover
+    appearance, personality-in-action, background, speech style,
+    motivations, and how they relate to {{user}}. Write it like a
+    character bio on a fan wiki — engaging, specific, with personality.
+    Use {{char}} and {{user}} placeholders.
 
-    "scenario" (200+ chars): The setting and situation context:
-    - Where and when the story takes place
-    - The world's rules (supernatural elements, technology level)
-    - The initial situation that brings {{char}} and {{user}} together
-    - Any ongoing conflicts or tensions
+    "personality" (300+ chars): How this person actually BEHAVES.
+    Not a trait list — describe their patterns: what sets them off,
+    how they show affection, what they do under pressure, their
+    contradictions. Write it like you're explaining a friend to
+    someone who's never met them.
 
-    "mes_example" (800+ chars): 2-3 example dialogue exchanges in this
-    exact format:
+    "scenario" (200+ chars): The story setup. Where are we, what's
+    happening, what tension exists between {{char}} and {{user}} right
+    now. Ground it in the world's rules. Make the reader want to jump in.
+
+    "mes_example" (800+ chars): 2-3 dialogue exchanges that CAPTURE
+    the character's voice. Format:
     <START>
-    {{user}}: [user action/dialogue]
-    {{char}}: [character response showing their voice, mannerisms]
-    Include at least one NSFW example if the character has explicit content.
-    Each exchange should demonstrate a different emotional register.
+    {{user}}: [action/dialogue]
+    {{char}}: [response that sounds like THIS character, not a generic AI]
+    Vary the emotional register. Include one NSFW example if the source
+    material is explicit. The dialogue should make someone think "oh,
+    I know exactly how this character talks."
 
-    "creator_notes": Brief notes on roleplay style, tone expectations,
-    and any content warnings.
+    "creator_notes": 2-3 sentences on tone, pacing expectations, and
+    content notes. Written casually, like a note to fellow players.
 
-    "system_prompt" (300+ chars): Detailed instructions for the AI:
-    - How to embody {{char}}'s personality consistently
-    - Narrative style (POV, tense, prose density)
-    - How to handle NSFW scenes (pacing, detail level, language)
-    - What to avoid (breaking character, modern slang if fantasy, etc.)
+    "system_prompt" (300+ chars): Technical RP instructions. Narrative
+    voice (POV, tense), how to handle explicit scenes, what to never
+    do (break character, use modern slang in fantasy, etc.). Be direct
+    and specific.
 
-    "post_history_instructions": Reminders for maintaining consistency
-    across long conversations (stay in character, remember established
-    facts, escalate tension naturally).
+    "post_history_instructions": 1-2 sentences on maintaining
+    consistency. Reference specific character facts to anchor.
 
-    "tags": 5-10 relevant tags (genre, tropes, character archetypes).
+    "tags": 5-10 tags. Include the provided tags plus any you infer.
 
-    "alternate_greetings": Array of 2-3 alternative opening messages,
-    each showing a different scenario or mood. Each should be 200+ chars
-    and written in the same style as first_mes.
+    "alternate_greetings": 2-3 alternative openings, each a different
+    scenario or mood. 200+ chars each. Written in the same voice and
+    style as the source material. These should feel like scenes the
+    original author might have written.
 
     "creator": "Anonymous"
-    "avatar": use the provided avatar filename
+    "avatar": use the provided filename
 
-    Keep ALL explicit/NSFW content. Return valid JSON only, no markdown.
+    Keep ALL explicit/NSFW content faithfully. Return valid JSON only.
 
   # 4) infer_card — user prompt template
   infer_card_user: |
     Character name: {name}
     Tags: {tags}
 
-    Analyze the following material deeply and produce a rich, detailed
-    character card. Every field must be thorough — do not write thin
-    or generic descriptions.
+    The tags above are DESIGN ANCHORS — make sure each one is visibly
+    reflected in the card fields. Write this card like a human author
+    who loves this character, not like an AI filling a template.
 
     BACKSTORY:
     {backstory}
 
-    OPENING (use as first_mes verbatim):
+    OPENING (for reference — first_mes is handled separately, do NOT
+    include it in your output):
     {opening}
 
     Avatar filename: {image_filename}

@@ -281,6 +281,9 @@ class CrawlPipeline:
             llm = LLMClient(self.config)
             image_name = (washed_cover_path or cover_path or Path("cover_image.jpg")).name
             card_data = await llm.infer_card(washed_text, image_name)
+            # Force first_mes = washed opening verbatim (LLM often rewrites it)
+            card_data["first_mes"] = washed_text.opening
+            card_data["name"] = washed_text.new_name
             card = {"spec": "chara_card_v2", "spec_version": "2.0", "data": card_data}
             (char_dir / "character.json").write_text(
                 json.dumps(card, indent=2, ensure_ascii=False), encoding="utf-8"
