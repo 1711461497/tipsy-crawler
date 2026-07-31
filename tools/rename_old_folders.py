@@ -42,7 +42,17 @@ def new_folder_name(meta_path: Path) -> Optional[str]:
     return f"{slug}_{chat_id}"
 
 
-def rename_output_folders(output_dir: Path, dry_run: bool = False) -> List[Tuple[Path, Path]]:
+def _unique_dir(old_dir: Path, new_name: str) -> Path:
+    new_dir = old_dir.with_name(new_name)
+    counter = 1
+    original_new_dir = new_dir
+    while new_dir.exists():
+        new_dir = original_new_dir.with_name(f"{original_new_dir.name}_{counter}")
+        counter += 1
+    return new_dir
+
+
+def rename_character_folders(output_dir: Path, dry_run: bool = False) -> List[Tuple[Path, Path]]:
     """Find and rename numeric character folders."""
     output_dir = output_dir.resolve()
     moves: List[Tuple[Path, Path]] = []
@@ -57,22 +67,55 @@ def rename_output_folders(output_dir: Path, dry_run: bool = False) -> List[Tuple
         if not new_name or new_name == old_dir.name:
             continue
 
-        new_dir = old_dir.with_name(new_name)
-        # Avoid collisions by appending a counter
-        counter = 1
-        original_new_dir = new_dir
-        while new_dir.exists():
-            new_dir = original_new_dir.with_name(f"{original_new_dir.name}_{counter}")
-            counter += 1
-
+        new_dir = _unique_dir(old_dir, new_name)
         moves.append((old_dir, new_dir))
 
     for old_dir, new_dir in moves:
         if dry_run:
-            print(f"[dry-run] {old_dir.name} -> {new_dir.name}")
+            print(f"[dry-run char] {old_dir.name} -> {new_dir.name}")
         else:
             old_dir.rename(new_dir)
-            print(f"[renamed] {old_dir} -> {new_dir}")
+            print(f"[renamed char] {old_dir} -> {new_dir}")
+
+    return moves
+
+
+def rename_author_folders(output_dir: Path, dry_run: bool = False) -> List[Tuple[Path, Path]]:
+    """Rename numeric author folders using names from authors.json."""
+    output_dir = output_dir.resolve()
+    moves: List[Tuple[Path, Path]] = []
+
+    authors_path = output_dir / "authors.json"
+    if not authors_path.exists():
+        print("[authors] authors.json not found, skipping author folder rename")
+        return moves
+
+    try:
+        authors = json.loads(authors_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"[authors] failed to read authors.json: {exc}", file=sys.stderr)
+        return moves
+
+    for entry in authors:
+        uid = str(entry.get("uid", "")).strip()
+        name = str(entry.get("name", "")).strip()
+        if not uid or not name or name == uid:
+            continue
+        old_dir = output_dir / uid
+        if not old_dir.is_dir():
+            continue
+        new_name = f"{safe_filename(name)}_{uid}"
+        if new_name == uid:
+            continue
+        new_dir = _unique_dir(old_dir, new_name)
+        moves.append((old_dir, new_dir))
+
+    for old_dir, new_dir in moves:
+        if dry_run:
+            print(f"[dry-run author] {old_dir.name} -> {new_dir.name}")
+        else:
+            old_dir.rename(new_dir)
+            print(f"[renamed author] {old_dir} -> {new_dir}")
 
     return moves
 
@@ -92,9 +135,11 @@ def main() -> int:
         print(f"Output directory does not exist: {output_dir}", file=sys.stderr)
         return 1
 
-    moves = rename_output_folders(output_dir, dry_run=dry_run)
+    char_moves = rename_character_folders(output_dir, dry_run=dry_run)
+    author_moves = rename_author_folders(output_dir, dry_run=dry_run)
     action = "would rename" if dry_run else "renamed"
-    print(f"\n{action} {len(moves)} folder(s)")
+    print(f"\n{action} {len(char_moves)} character folder(s)")
+    print(f"{action} {len(author_moves)} author folder(s)")
     return 0
 
 

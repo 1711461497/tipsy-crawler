@@ -36,13 +36,24 @@ class CrawlPipeline:
         safe = safe[:max_len].strip("_-")
         return safe or "unknown"
 
+    def _author_dir(self, meta: CharacterMeta) -> Path:
+        """Return the output directory for an author.
+
+        Format: <output_dir>/<safe_author_name>_<author_uid>
+        Falls back to <output_dir>/<author_uid> when author_name is unknown.
+        """
+        if meta.author_name and meta.author_name != meta.author_uid:
+            author_slug = self._safe_filename(meta.author_name)
+            return self.output_dir / f"{author_slug}_{meta.author_uid}"
+        return self.output_dir / meta.author_uid
+
     def _char_dir(self, meta: CharacterMeta) -> Path:
         """Return the output directory for a character.
 
-        Format: <output_dir>/<author_uid>/<safe_name>_<chat_id>
+        Format: <output_dir>/<author_dir>/<safe_name>_<chat_id>
         """
         slug = self._safe_filename(meta.name)
-        return self.output_dir / meta.author_uid / f"{slug}_{meta.chat_id}"
+        return self._author_dir(meta) / f"{slug}_{meta.chat_id}"
 
     async def run_mvp(
         self,

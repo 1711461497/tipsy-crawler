@@ -159,6 +159,7 @@ class TipsyScraper:
         cards = soup.select(CARD_SELECTOR)
 
         author_uid = self._extract_author_uid(profile_url)
+        author_name = self._extract_author_name(soup)
         results: list[CharacterMeta] = []
         for card in cards:
             title_el = card.select_one(CARD_TITLE_SELECTOR)
@@ -176,11 +177,13 @@ class TipsyScraper:
                     cover_url=img_el.get("src", ""),
                     profile_url=profile_url,
                     author_uid=author_uid,
+                    author_name=author_name,
                 )
             )
 
         info = AuthorInfo(
             uid=author_uid,
+            name=author_name or author_uid,
             url=profile_url,
             character_count=len(results),
             scraped_at=datetime.utcnow(),
@@ -429,6 +432,50 @@ class TipsyScraper:
         """Extract author UID from profile URL."""
         match = re.search(r"/profile/(\d+)", profile_url)
         return match.group(1) if match else "unknown"
+
+    @staticmethod
+    def _extract_author_name(soup: BeautifulSoup) -> Optional[str]:
+        """Extract author display name from profile page text.
+
+        Profile pages show the name immediately after the 'Following' or 'Follow'
+        button, followed by the follower count, e.g.:
+            FollowingBUNN1♡B4BY1.5kFollowers...
+            Follow 𝒟𝑒𝑒♡361Followers...
+        """
+        text = soup.get_text(" ", strip=True)
+        # Collapse whitespace to make the regex robust
+        collapsed = re.sub(r"\s+", " ", text)
+        match = re.search(
+            r"(?:Following|Follow)\s*(.+?)\s*(\d+(?:\.\d+)?k?)\s*Followers",
+            collapsed,
+            re.IGNORECASE,
+        )
+        if match:
+            name = match.group(1).strip()
+            # Clean up any trailing separators the regex may have left
+            name = re.sub(r"[\s_]+$", "", name)
+            return name or None
+        return None
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    async def fetch_author_name(self, profile_url: str) -> tuple[str, Optional[str]]:
+        """Load a profile page and return (author_uid, author_display_name).
+
+        Does not scan characters; useful for lightweight folder naming.
+        """
+        page = await self._new_page()
+        try:
+            await page.goto(profile_url, wait_until="domcontentloaded", timeout=60000)
+            await page.wait_for_selector("body", timeout=30000)
+            await asyncio.sleep(0.5)
+            html = await page.content()
+        finally:
+            await page.close()
+
+        soup = BeautifulSoup(html, "html.parser")
+        uid = self._extract_author_uid(profile_url)
+        name = self._extract_author_name(soup)
+        return uid, name
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def scrape_chat_page(self, chat_url: str) -> ChatRecord:

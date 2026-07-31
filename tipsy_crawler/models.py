@@ -15,6 +15,7 @@ class CharacterMeta(BaseModel):
     cover_url: str
     profile_url: str
     author_uid: str
+    author_name: Optional[str] = None
     scraped_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -59,6 +60,7 @@ class AuthorInfo(BaseModel):
     """Author metadata index entry."""
 
     uid: str
+    name: str
     url: str
     character_count: int
     scraped_at: datetime = Field(default_factory=datetime.utcnow)
